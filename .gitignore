@@ -127,3 +127,10 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# Data with videos
+hw1/data/q2_dagger_ant_default/events.out.tfevents.1751864413.Xiong
+hw1/data/q2_dagger_ant_expert/events.out.tfevents.1751862227.Xiong
+hw2/data/q2_pg_cheetah_baseline_HalfCheetah-v4_06-07-2025_22-55-28/events.out.tfevents.1751864128.Xiong
+hw2/data/q2_pg_humanoid_Humanoid-v4_07-07-2025_01-02-23/events.out.tfevents.1751871743.Xiong
+hw3/data/hw3_sac_sac_humanoid_redq_Humanoid-v4_reparametrize_s256_l3_alr0.0003_clr0.0003_b256_d0.99_t0.05_stu0.005_redq_16-07-2025_00-33-28/events.out.tfevents.1752651208.Xiong
