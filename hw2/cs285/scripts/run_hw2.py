@@ -32,7 +32,9 @@ def run_training_loop(args):
 
     # add action noise, if needed
     if args.action_noise_std > 0:
-        assert not discrete, f"Cannot use --action_noise_std for discrete environment {args.env_name}"
+        assert (
+            not discrete
+        ), f"Cannot use --action_noise_std for discrete environment {args.env_name}"
         env = ActionNoiseWrapper(env, args.seed, args.action_noise_std)
 
     max_ep_len = args.ep_len or env.spec.max_episode_steps
@@ -65,12 +67,15 @@ def run_training_loop(args):
 
     total_envsteps = 0
     start_time = time.time()
+    all_logs = []
 
     for itr in range(args.n_iter):
         print(f"\n********** Iteration {itr} ************")
         # TODO: sample `args.batch_size` transitions using utils.sample_trajectories
         # make sure to use `max_ep_len`
-        trajs, envsteps_this_batch = None, None  # TODO
+        trajs, envsteps_this_batch = utils.sample_trajectories(
+            env, agent.actor, args.batch_size, max_ep_len
+        )  # TODO
         total_envsteps += envsteps_this_batch
 
         # trajs should be a list of dictionaries of NumPy arrays, where each dictionary corresponds to a trajectory.
@@ -78,7 +83,12 @@ def run_training_loop(args):
         trajs_dict = {k: [traj[k] for traj in trajs] for k in trajs[0]}
 
         # TODO: train the agent using the sampled trajectories and the agent's update function
-        train_info: dict = None
+        train_info: dict = agent.update(
+            obs=trajs_dict["observation"],
+            actions=trajs_dict["action"],
+            rewards=trajs_dict["reward"],
+            terminals=trajs_dict["terminal"],
+        )
 
         if itr % args.scalar_log_freq == 0:
             # save eval metrics
@@ -102,7 +112,13 @@ def run_training_loop(args):
                 print("{} : {}".format(key, value))
                 logger.log_scalar(value, key, itr)
             print("Done logging...\n\n")
-
+            all_logs.append(
+                {
+                    k: v
+                    for k, v in logs.items()
+                    if k != "Initial_DataCollection_AverageReturn"
+                }
+            )
             logger.flush()
 
         if args.video_log_freq != -1 and itr % args.video_log_freq == 0:
@@ -118,6 +134,7 @@ def run_training_loop(args):
                 max_videos_to_save=MAX_NVIDEO,
                 video_title="eval_rollouts",
             )
+    return all_logs
 
 
 def main():
@@ -156,6 +173,7 @@ def main():
     parser.add_argument("--scalar_log_freq", type=int, default=1)
 
     parser.add_argument("--action_noise_std", type=float, default=0)
+    parser.add_argument("--num_seeds_to_average", type=int, default=1)
 
     args = parser.parse_args()
 
@@ -179,8 +197,32 @@ def main():
     args.logdir = logdir
     if not (os.path.exists(logdir)):
         os.makedirs(logdir)
+    if args.num_seeds_to_average > 1:
+        aggregated_logs = []
+        for seed in range(1, args.num_seeds_to_average + 1):
+            args.seed = seed
+            args.logdir = logdir + f"_s{seed}"
+            print(f"Running with seed {args.seed} and logdir {args.logdir}")
+            all_logs_for_seed = run_training_loop(args)
+            flattened_logs_for_seed = {
+                k: np.array([log[k] for log in all_logs_for_seed])
+                for k in all_logs_for_seed[0]
+            }
+            aggregated_logs.append(flattened_logs_for_seed)
+        averaged_logs = {
+            k: np.mean([log[k] for log in aggregated_logs], axis=0)
+            for k in aggregated_logs[0]
+        }
+        aggregate_logger = Logger(logdir + "_s_aggregated")
+        for name, logs in averaged_logs.items():
+            itr = 0
+            for scalar in logs:
+                aggregate_logger.log_scalar(scalar, name, itr)
+                itr += 1
+        aggregate_logger.flush()
 
-    run_training_loop(args)
+    else:
+        run_training_loop(args)
 
 
 if __name__ == "__main__":

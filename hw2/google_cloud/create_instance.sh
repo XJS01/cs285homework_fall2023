@@ -1,15 +1,15 @@
 #! /bin/bash
 
 # Creates a new GPU instance, transfers the code to it, and runs some installation steps.
-
-export ZONE="us-west1-b"
+# gcloud compute images list --project deeplearning-platform-release --format="value(NAME)" --no-standard-images
+export ZONE="us-central1-a"
 export INSTANCE_NAME="cs285"
 
 echo "Creating instance..."
 
 gcloud compute instances create $INSTANCE_NAME \
   --zone=$ZONE \
-  --image-family=pytorch-1-13-cu113-debian-11-py310 \
+  --image-family=pytorch-latest-cu124-debian-11-py310 \
   --image-project=deeplearning-platform-release \
   --maintenance-policy=TERMINATE \
   --machine-type=n1-standard-4 \
