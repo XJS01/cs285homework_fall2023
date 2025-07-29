@@ -7,8 +7,9 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from cs285.env_configs.schedule import ConstantSchedule
+from cs285.env_configs.schedule import ConstantSchedule, LinearSchedule
 import cs285.infrastructure.pytorch_util as ptu
+
 
 def basic_dqn_config(
     env_name: str,
@@ -40,8 +41,13 @@ def basic_dqn_config(
     ) -> torch.optim.lr_scheduler._LRScheduler:
         return torch.optim.lr_scheduler.ConstantLR(optimizer, factor=1.0)
 
-    exploration_schedule = ConstantSchedule(
-        0.3
+    epsilon = kwargs.get("epsilon", 0.3)
+    exploration_schedule = (
+        LinearSchedule(
+            schedule_timesteps=total_steps * 9 // 10, final_p=0.001, initial_p=epsilon
+        )
+        if kwargs.get("use_epsilon_decay", False)
+        else ConstantSchedule(epsilon)
     )
 
     def make_env():

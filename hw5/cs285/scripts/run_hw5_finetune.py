@@ -57,10 +57,51 @@ def run_training_loop(config: dict, logger: Logger, args: argparse.Namespace):
 
     num_offline_steps = config["offline_steps"]
     num_online_steps = config["total_steps"] - num_offline_steps
-
+    epsilon = None
+    with open(
+        os.path.join(args.dataset_dir, f"{config['dataset_name']}.pkl"), "rb"
+    ) as f:
+        dataset = pickle.load(f)
+        # Personal note: can also just directly copy the data to the replay buffer or load the data
+        # as the replay buffer and reshape the data to be config["total_steps"] size but all of these
+        # break class encapsulation. Technically, even reading size and max_size also violates encapsulation.
+        # but it feels less egregious.
+        if not config.get("disable_offline_data", False):
+            for i in range(min(dataset.size, dataset.max_size)):
+                replay_buffer.insert(
+                    observation=dataset.observations[i],
+                    action=dataset.actions[i],
+                    reward=dataset.rewards[i],
+                    next_observation=dataset.next_observations[i],
+                    done=dataset.dones[i],
+                )
     for step in tqdm.trange(config["total_steps"], dynamic_ncols=True):
         # TODO(student): Borrow code from another online training script here. Only run the online training loop after `num_offline_steps` steps.
+        if step >= num_offline_steps:
+            # Personal note: from HW3 DQN
+            assert step - num_offline_steps < num_online_steps
+            epsilon = exploration_schedule.value(step)
+            action = agent.get_action(observation=observation, epsilon=epsilon)
 
+            next_observation, reward, done, info = env.step(action)
+
+            next_observation = np.asarray(next_observation)
+            truncated = info.get("TimeLimit.truncated", False)
+
+            replay_buffer.insert(
+                observation=observation,
+                action=action,
+                reward=reward,
+                next_observation=next_observation,
+                done=done and not truncated,
+            )
+            recent_observations.append(observation)
+            if done:
+                observation = env.reset()
+                logger.log_scalar(info["episode"]["r"], "train_return", step)
+                logger.log_scalar(info["episode"]["l"], "train_ep_len", step)
+            else:
+                observation = next_observation
         # Main training loop
         batch = replay_buffer.sample(config["batch_size"])
 
@@ -107,7 +148,7 @@ def run_training_loop(config: dict, logger: Logger, args: argparse.Namespace):
                 logger.log_scalar(np.max(ep_lens), "eval/ep_len_max", step)
                 logger.log_scalar(np.min(ep_lens), "eval/ep_len_min", step)
 
-        if step % args.visualize_interval == 0:
+        if step % args.visualize_interval == 0 and len(recent_observations) > 0:
             env_pointmass: Pointmass = env.unwrapped
             observations = np.stack(recent_observations)
             recent_observations = []

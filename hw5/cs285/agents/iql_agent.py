@@ -16,7 +16,7 @@ class IQLAgent(AWACAgent):
             [torch.nn.ParameterList], torch.optim.Optimizer
         ],
         expectile: float,
-        **kwargs
+        **kwargs,
     ):
         super().__init__(
             observation_shape=observation_shape, num_actions=num_actions, **kwargs
@@ -38,7 +38,22 @@ class IQLAgent(AWACAgent):
         action_dist: Optional[torch.distributions.Categorical] = None,
     ):
         # TODO(student): Compute advantage with IQL
-        return ...
+        qa_values = self.critic(observations)
+        q_values = torch.gather(
+            qa_values,
+            -1,
+            actions.unsqueeze(1),
+        ).squeeze(1)
+        assert action_dist.probs.shape == qa_values.shape
+        # Note we do not use the actor so this would be an implicit advantage.
+        # Theoretically, and state dependent baseline would result in the same policy,
+        # so we could use the actor if we want. We might want to update v then q rather than
+        # q then v, so that when this advantage is used, the value critic is closer to the expected
+        # value of Q
+        values = self.value_critic(observations).squeeze(1)
+        assert q_values.shape == values.shape
+
+        return q_values - values
 
     def update_q(
         self,
@@ -52,7 +67,17 @@ class IQLAgent(AWACAgent):
         Update Q(s, a)
         """
         # TODO(student): Update Q(s, a) to match targets (based on V)
-        loss = ...
+        qa_values = self.critic(observations)
+        q_values = torch.gather(
+            qa_values,
+            -1,
+            actions.unsqueeze(1),
+        ).squeeze(1)
+        assert rewards.shape == q_values.shape
+        next_values = self.target_value_critic(next_observations).squeeze(1)
+        assert rewards.shape == dones.shape == next_values.shape
+        target_values = rewards + self.discount * (1 - dones.float()) * next_values
+        loss = self.critic_loss(q_values, target_values)
 
         self.critic_optimizer.zero_grad()
         loss.backward()
@@ -78,7 +103,10 @@ class IQLAgent(AWACAgent):
         Compute the expectile loss for IQL
         """
         # TODO(student): Compute the expectile loss
-        return ...
+        error = target_qs - vs
+        return torch.where(
+            error > 0, expectile * error**2, (1 - expectile) * error**2
+        ).mean()
 
     def update_v(
         self,
@@ -91,7 +119,16 @@ class IQLAgent(AWACAgent):
         # TODO(student): Compute target values for V(s)
 
         # TODO(student): Update V(s) using the loss from the IQL paper
-        loss = ...
+        vs = self.value_critic(observations)
+        qa_values = self.target_critic(observations)
+        target_values = torch.gather(
+            qa_values,
+            -1,
+            actions.unsqueeze(1),
+        ).squeeze(1)
+        loss = IQLAgent.iql_expectile_loss(
+            self.expectile, self.value_critic(observations), target_values
+        )
 
         self.value_critic_optimizer.zero_grad()
         loss.backward()
@@ -120,7 +157,9 @@ class IQLAgent(AWACAgent):
         Update both Q(s, a) and V(s)
         """
 
-        metrics_q = self.update_q(observations, actions, rewards, next_observations, dones)
+        metrics_q = self.update_q(
+            observations, actions, rewards, next_observations, dones
+        )
         metrics_v = self.update_v(observations, actions)
 
         return {**metrics_q, **metrics_v}
@@ -134,13 +173,15 @@ class IQLAgent(AWACAgent):
         dones: torch.Tensor,
         step: int,
     ):
-        metrics = self.update_critic(observations, actions, rewards, next_observations, dones)
+        metrics = self.update_critic(
+            observations, actions, rewards, next_observations, dones
+        )
         metrics["actor_loss"] = self.update_actor(observations, actions)
 
         if step % self.target_update_period == 0:
             self.update_target_critic()
             self.update_target_value_critic()
-        
+
         return metrics
 
     def update_target_value_critic(self):

@@ -42,6 +42,20 @@ class CQLAgent(DQNAgent):
 
         # TODO(student): modify the loss to implement CQL
         # Hint: `variables` includes qa_values and q_values from your CQL implementation
-        loss = loss + ...
+        # Personal note, larger alpha means we push down larger Q-values but push up Q-values
+        # from the behavior policy. In our case, larger alpha will cause the learned policy
+        # to be more random.
+        # alpha=0 should be same as DQN.
+        loss = (
+            loss
+            + self.cql_alpha
+            * (
+                self.cql_temperature
+                * torch.logsumexp(
+                    1.0 / self.cql_temperature * variables["qa_values"], dim=-1
+                )
+                - variables["q_values"]
+            ).mean()
+        )
 
         return loss, metrics, variables

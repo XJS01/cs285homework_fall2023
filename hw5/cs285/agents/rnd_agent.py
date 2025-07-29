@@ -7,10 +7,12 @@ from typing import Callable, List, Tuple
 from cs285.agents.dqn_agent import DQNAgent
 import cs285.infrastructure.pytorch_util as ptu
 
+
 def init_network(model):
     if isinstance(model, nn.Linear):
         model.weight.data.normal_()
         model.bias.data.normal_()
+
 
 class RNDAgent(DQNAgent):
     def __init__(
@@ -37,16 +39,18 @@ class RNDAgent(DQNAgent):
         for p in self.rnd_target_net.parameters():
             p.requires_grad_(False)
 
-        self.rnd_optimizer = make_rnd_network_optimizer(
-            self.rnd_net.parameters()
-        )
+        self.rnd_optimizer = make_rnd_network_optimizer(self.rnd_net.parameters())
 
     def update_rnd(self, obs: torch.Tensor) -> torch.Tensor:
         """
         Update the RND network using the observations.
         """
         # TODO(student): update the RND network
-        loss = ...
+        # Personal note: HW description uses the norm while paper uses squared norm
+        obs = obs.unsqueeze(0) if obs.ndim == 1 else obs
+        loss = torch.sum(
+            (self.rnd_net(obs) - self.rnd_target_net(obs)) ** 2, dim=-1
+        ).mean()
 
         self.rnd_optimizer.zero_grad()
         loss.backward()
@@ -65,11 +69,16 @@ class RNDAgent(DQNAgent):
     ):
         with torch.no_grad():
             # TODO(student): Compute RND bonus for batch and modify rewards
-            rnd_error = ...
+            rnd_error = torch.sum(
+                (self.rnd_net(observations) - self.rnd_target_net(observations)) ** 2,
+                dim=-1,
+            )
             assert rnd_error.shape == rewards.shape
-            rewards = ...
+            rewards = rewards + self.rnd_weight * rnd_error
 
-        metrics = super().update(observations, actions, rewards, next_observations, dones, step)
+        metrics = super().update(
+            observations, actions, rewards, next_observations, dones, step
+        )
 
         # Update the RND network.
         rnd_loss = self.update_rnd(observations)
@@ -79,7 +88,7 @@ class RNDAgent(DQNAgent):
 
     def num_aux_plots(self) -> int:
         return 1
-    
+
     def plot_aux(
         self,
         axes: List,
@@ -88,6 +97,7 @@ class RNDAgent(DQNAgent):
         Plot the RND prediction error for the observations.
         """
         import matplotlib.pyplot as plt
+
         assert len(axes) == 1
         ax: plt.Axes = axes[0]
 
@@ -106,5 +116,8 @@ class RNDAgent(DQNAgent):
 
             # Log scale, aligned with normal axes
             from matplotlib import cm
-            ax.imshow(ptu.to_numpy(errors).T, extent=[0, 1, 0, 1], origin="lower", cmap="hot")
+
+            ax.imshow(
+                ptu.to_numpy(errors).T, extent=[0, 1, 0, 1], origin="lower", cmap="hot"
+            )
             plt.colorbar(ax.images[0], ax=ax)

@@ -1,0 +1,15 @@
+base_config: "cql"
+env_name: "PointmassHard-v0"
+exp_name: "pointmass_hard_cql_alphap005_epsilsonp8decay_nl4_hs128"
+use_double_q: true
+total_steps: 200000
+offline_steps: 100000
+dataset_name: "pointmass_hard_rnd"
+
+cql_alpha: 0.005 
+
+hidden_size: 128
+num_layers: 4
+use_reward: true
+epsilon: 0.8
+use_epsilon_decay: true
